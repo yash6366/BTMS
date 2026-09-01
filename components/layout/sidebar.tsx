@@ -32,13 +32,13 @@ export function Sidebar({ title, subtitle, user, menuItems, activeMenu, onMenuCh
       {/* Logo and App Name */}
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-center space-x-3">
-          <div className="h-10 w-10 flex items-center justify-center">
+          <div className="h-10 w-16 flex items-center justify-center">
             <Image
               src="/logo.png"
               alt="BHEL Logo"
-              width={40}
+              width={64}
               height={40}
-              className="object-contain"
+              className="h-10 w-auto object-contain"
             />
           </div>
           <div>

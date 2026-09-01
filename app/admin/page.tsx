@@ -362,8 +362,8 @@ export default function AdminDashboardPage() {
       <aside className="w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shadow-lg shrink-0">
         {/* Brand Header */}
         <div className="p-4 border-b border-slate-800 flex items-center space-x-3 bg-slate-950">
-          <div className="h-9 w-9 bg-white rounded flex items-center justify-center p-1">
-            <Image src="/logo.png" alt="BHEL Logo" width={32} height={32} className="object-contain" />
+          <div className="h-9 w-14 bg-white rounded flex items-center justify-center p-1">
+            <Image src="/logo.png" alt="BHEL Logo" width={52} height={32} className="h-7 w-auto object-contain" />
           </div>
           <div>
             <h2 className="text-sm font-bold text-white tracking-wide">BHEL BTMS</h2>
@@ -1277,6 +1277,9 @@ export default function AdminDashboardPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-bold">Edit Employee Master Record ({selectedEmp?.empId})</DialogTitle>
+            <DialogDescription className="text-xs">
+              Update employee master directory attributes.
+            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleEditEmployeeSubmit} className="space-y-4 py-2">

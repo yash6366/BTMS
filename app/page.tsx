@@ -22,13 +22,13 @@ export default function WelcomePage() {
           <div className="flex justify-between items-center">
             {/* Logo Section */}
             <div className="flex items-center space-x-4">
-              <div className="h-12 w-12 bg-gray-200 rounded-lg flex items-center justify-center">
+              <div className="h-12 w-20 bg-gray-50 rounded-lg flex items-center justify-center p-1">
                 <Image
                   src="/logo.png"
                   alt="Logo"
-                  width={40}
+                  width={64}
                   height={40}
-                  className="object-contain"
+                  className="h-10 w-auto object-contain"
                   priority
                 />
               </div>

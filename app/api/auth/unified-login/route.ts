@@ -26,21 +26,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // First try regular user authentication
-    let user = await authenticateUser(username, password)
-    let userType = 'regular'
-
-    // If regular authentication fails, try transport user authentication
-    if (!user) {
-      user = await authenticateTransportUser(username, password)
-      if (user) {
-        userType = 'transport'
-      }
-    }
+    // Execute single-pass authentication
+    const user = await authenticateUser(username, password)
 
     if (!user) {
       return NextResponse.json({ error: "Invalid username or password, or account is inactive" }, { status: 401 })
     }
+
+    // Determine user type (transport vs regular)
+    const isTransportUser =
+      user.tools === "1" ||
+      user.tools === "Y" ||
+      user.usergroup?.toLowerCase().includes("transport") ||
+      user.username?.toLowerCase() === "transport"
+    const userType = isTransportUser ? "transport" : "regular"
 
     // Clear rate limit on successful authentication
     clearRateLimit(clientIP)

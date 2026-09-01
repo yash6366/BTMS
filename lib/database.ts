@@ -4,7 +4,6 @@ import crypto from "crypto"
 
 // Initialize database configuration using PostgreSQL connection string
 declare global {
-  // eslint-disable-next-line no-var
   var __btmsPgPool: Pool | undefined
 }
 
@@ -28,10 +27,10 @@ function createNewPool(): Pool {
     password: !connectionString ? (process.env.DB_PASSWORD || process.env.PGPASSWORD || "") : undefined,
     ssl: sslConfig,
     max: parseInt(process.env.DB_POOL_MAX || "10", 10),
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 30000,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 8000,
     keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
+    keepAliveInitialDelayMillis: 5000,
   })
 
   pool.on("error", (err) => {
@@ -92,7 +91,7 @@ function isTransientConnectionError(error: unknown): boolean {
 export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   params?: unknown[],
-  maxRetries = 2
+  maxRetries = 1
 ): Promise<QueryResult<T>> {
   let attempts = 0
   while (attempts <= maxRetries) {
@@ -109,7 +108,7 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
       attempts++
       if (attempts <= maxRetries && isTransientConnectionError(error)) {
         console.warn(`Database connection dropped. Retrying query (attempt ${attempts}/${maxRetries})...`)
-        await new Promise((resolve) => setTimeout(resolve, attempts * 400))
+        await new Promise((resolve) => setTimeout(resolve, attempts * 250))
         continue
       }
       console.error("Database query error:", error instanceof Error ? error.message : "Unknown error")
@@ -336,9 +335,19 @@ export async function authenticateUser(username: string, plainPassword: string):
     }
 
     // Method 3: Legacy plain text password/pwd fallback for backward compatibility
+    let matchedViaPlainFallback = false
     if (!isAuthenticated) {
-      if ((row.password && row.password === plainPassword) || (row.pwd && row.pwd === plainPassword)) {
-        isAuthenticated = true
+      const stored = row.password || row.pwd
+      if (stored) {
+        if (
+          stored === plainPassword ||
+          stored.trim() === plainPassword.trim() ||
+          (stored.endsWith(".") && stored.slice(0, -1) === plainPassword.trim()) ||
+          (plainPassword.endsWith(".") && plainPassword.slice(0, -1) === stored.trim())
+        ) {
+          isAuthenticated = true
+          matchedViaPlainFallback = true
+        }
       }
     }
 
@@ -346,8 +355,8 @@ export async function authenticateUser(username: string, plainPassword: string):
       return null
     }
 
-    // Progressive Rehash: Upgrade user to bcrypt hash in background if missing
-    if (!row.password_hash) {
+    // Progressive Rehash: Upgrade user to bcrypt hash in background if missing or authenticated via plain fallback
+    if (!row.password_hash || matchedViaPlainFallback) {
       try {
         const salt = await bcrypt.genSalt(10)
         const newHash = await bcrypt.hash(plainPassword, salt)

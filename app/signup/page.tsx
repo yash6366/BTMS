@@ -224,13 +224,13 @@ export default function SignupPage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 flex items-center justify-center">
+              <div className="h-10 w-16 flex items-center justify-center">
                 <Image
                   src="/logo.png"
                   alt="BHEL Logo"
-                  width={40}
+                  width={64}
                   height={40}
-                  className="object-contain"
+                  className="h-10 w-auto object-contain"
                   priority
                 />
               </div>

@@ -7,7 +7,7 @@ const protectedRoutes = ["/dashboard", "/manager-dashboard", "/transport-dashboa
 // Routes that authenticated users should not access (login and registration pages)
 const publicRoutes = ["/login", "/login/employee", "/login/manager", "/login/transport", "/signup"]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Check if the route requires authentication
