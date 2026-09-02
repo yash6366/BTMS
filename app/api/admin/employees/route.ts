@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getEmployeeMasterList, addEmployeeMaster } from "@/lib/auth"
 import { requireAdminUser } from "@/lib/secure-auth"
+import { parseBoundedPagination, sanitizeSearchQuery } from "@/lib/query-bounds"
+import { getOrGenerateCorrelationId, createSafeErrorResponse } from "@/lib/logger"
 import { z } from "zod"
 
 export const dynamic = "force-dynamic"
@@ -16,35 +18,58 @@ const AddEmployeeSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
+  const correlationId = getOrGenerateCorrelationId(req.headers.get("x-correlation-id"))
+
   try {
     const admin = await requireAdminUser()
     if (!admin) {
-      return NextResponse.json({ error: "Unauthorized. Administrator privileges required." }, { status: 403 })
+      return NextResponse.json(
+        { error: "Unauthorized. Administrator privileges required.", correlationId },
+        { status: 403, headers: { "X-Correlation-ID": correlationId } }
+      )
     }
 
     const { searchParams } = new URL(req.url)
-    const search = searchParams.get("search") || undefined
+    const rawSearch = searchParams.get("search")
+    const search = rawSearch ? sanitizeSearchQuery(rawSearch) : undefined
     const department = searchParams.get("department") || undefined
-    const limit = parseInt(searchParams.get("limit") || "50", 10)
-    const offset = parseInt(searchParams.get("offset") || "0", 10)
 
-    const result = await getEmployeeMasterList({ search, department, limit, offset })
-    return NextResponse.json({
-      success: true,
-      employees: result.employees,
-      total: result.total,
-    })
+    const { page, pageSize, offset } = parseBoundedPagination(
+      searchParams.get("page"),
+      searchParams.get("pageSize") || searchParams.get("limit")
+    )
+
+    const result = await getEmployeeMasterList({ search, department, limit: pageSize, offset })
+    return NextResponse.json(
+      {
+        success: true,
+        employees: result.employees,
+        pagination: {
+          page,
+          pageSize,
+          total: result.total,
+          totalPages: Math.ceil(result.total / pageSize) || 1,
+        },
+        total: result.total,
+        correlationId,
+      },
+      { headers: { "X-Correlation-ID": correlationId } }
+    )
   } catch (error) {
-    console.error("GET /api/admin/employees error:", error)
-    return NextResponse.json({ error: "Failed to retrieve employee directory." }, { status: 500 })
+    return createSafeErrorResponse(error, correlationId)
   }
 }
 
 export async function POST(req: NextRequest) {
+  const correlationId = getOrGenerateCorrelationId(req.headers.get("x-correlation-id"))
+
   try {
     const admin = await requireAdminUser()
     if (!admin) {
-      return NextResponse.json({ error: "Unauthorized. Administrator privileges required." }, { status: 403 })
+      return NextResponse.json(
+        { error: "Unauthorized. Administrator privileges required.", correlationId },
+        { status: 403, headers: { "X-Correlation-ID": correlationId } }
+      )
     }
 
     const clientIP = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown"
@@ -53,33 +78,22 @@ export async function POST(req: NextRequest) {
     const parsed = AddEmployeeSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(
-        {
-          error: "Validation failed for employee details.",
-          details: parsed.error.flatten().fieldErrors,
-        },
-        { status: 400 }
+        { error: "Validation failed.", details: parsed.error.flatten().fieldErrors, correlationId },
+        { status: 400, headers: { "X-Correlation-ID": correlationId } }
       )
     }
 
-    try {
-      const newEmployee = await addEmployeeMaster(parsed.data, admin.username, clientIP)
-      return NextResponse.json({
-        success: true,
-        message: "Employee successfully added to Master Directory.",
-        employee: newEmployee,
-      })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "ERROR"
-      if (msg === "EMPLOYEE_ALREADY_EXISTS") {
-        return NextResponse.json(
-          { error: "An employee with this Staff Number or Email already exists in the directory." },
-          { status: 409 }
-        )
-      }
-      throw err
-    }
+    const emp = await addEmployeeMaster(
+      parsed.data,
+      admin.username,
+      clientIP
+    )
+
+    return NextResponse.json(
+      { success: true, employee: emp, correlationId },
+      { headers: { "X-Correlation-ID": correlationId } }
+    )
   } catch (error) {
-    console.error("POST /api/admin/employees error:", error)
-    return NextResponse.json({ error: "Failed to create employee record." }, { status: 500 })
+    return createSafeErrorResponse(error, correlationId)
   }
 }

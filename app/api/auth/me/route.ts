@@ -17,7 +17,7 @@ export async function GET(_request: NextRequest) {
         username: user.username,
         usergroup: user.usergroup,
         email: user.email,
-        role: user.role || (user.permissions?.manage ? "manager" : "employee"),
+        role: user.role,
         usertype: user.usertype,
         permissions: user.permissions,
       },

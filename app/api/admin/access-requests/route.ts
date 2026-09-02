@@ -1,17 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getPendingAccessRequests, approveAccessRequest, rejectAccessRequest } from "@/lib/auth"
+import { getAccessRequests, approveAccessRequest, rejectAccessRequest } from "@/lib/auth"
 import { requireAdminUser } from "@/lib/secure-auth"
 
 export const dynamic = "force-dynamic"
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     const admin = await requireAdminUser()
     if (!admin) {
       return NextResponse.json({ error: "Unauthorized. Administrator privileges required." }, { status: 403 })
     }
 
-    const requests = await getPendingAccessRequests()
+    const { searchParams } = new URL(req.url)
+    const status = searchParams.get("status") || "PENDING"
+
+    const requests = await getAccessRequests(status)
     return NextResponse.json({
       success: true,
       requests,

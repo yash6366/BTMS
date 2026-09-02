@@ -280,6 +280,7 @@ export interface DBUser {
   pageaccess?: string
   active?: string
   reportingto?: string
+  Reportingto?: string
 }
 
 /**
@@ -871,7 +872,34 @@ export async function getEmployeeMasterList(params?: {
     queryText += ` ORDER BY e."EMP_ID" ASC LIMIT $${pIdx} OFFSET $${pIdx + 1}`
     queryParams.push(limit, offset)
 
-    const res = await query(queryText, queryParams)
+    // Build matching count query
+    let countQuery = `SELECT COUNT(*) as count FROM "EDN_PIS_EMPLOYEE_MASTER_VIEW" e WHERE 1=1`
+    const countParams: unknown[] = []
+    let cIdx = 1
+
+    if (search) {
+      countQuery += ` AND (
+        LOWER(e."EMP_ID") LIKE $${cIdx} OR 
+        LOWER(e."EMP_FNAME") LIKE $${cIdx} OR 
+        LOWER(e."EMP_LNAME") LIKE $${cIdx} OR 
+        LOWER(e."EMP_EMAIL_ID") LIKE $${cIdx}
+      )`
+      countParams.push(`%${search.toLowerCase()}%`)
+      cIdx++
+    }
+
+    if (department && department !== "ALL") {
+      countQuery += ` AND LOWER(e."DEPT") = $${cIdx}`
+      countParams.push(department.toLowerCase())
+      cIdx++
+    }
+
+    const [res, countRes] = await Promise.all([
+      query(queryText, queryParams),
+      query(countQuery, countParams),
+    ])
+
+    const total = parseInt(countRes.rows[0]?.count || "0", 10)
 
     const employees: AdminEmployeeItem[] = res.rows.map((r) => {
       const nameParts = [r.EMP_FNAME, r.EMP_MNAME, r.EMP_LNAME].filter((p: string) => p && p.trim())
@@ -894,7 +922,7 @@ export async function getEmployeeMasterList(params?: {
 
     return {
       employees,
-      total: employees.length,
+      total,
     }
   } catch (error) {
     console.error("getEmployeeMasterList error:", error)
@@ -1141,6 +1169,7 @@ export interface AccessRequestItem {
   requestedRole: string
   status: string
   reason?: string
+  reviewNotes?: string
   requestedAt: string
   reviewedAt?: string
   reviewedBy?: string
@@ -1151,17 +1180,19 @@ export interface AccessRequestItem {
 }
 
 /**
- * Retrieve pending role and access elevation requests
+ * Retrieve role and access elevation requests with status filtering
  */
-export async function getPendingAccessRequests(): Promise<AccessRequestItem[]> {
+export async function getAccessRequests(status?: string): Promise<AccessRequestItem[]> {
   try {
-    const res = await query(`
+    const filterStatus = (status || "ALL").toUpperCase().trim()
+    let queryText = `
       SELECT 
         r."id",
         r."username",
         r."requested_role",
         r."status",
         r."reason",
+        r."review_notes",
         r."requested_at",
         r."reviewed_at",
         r."reviewed_by",
@@ -1173,9 +1204,17 @@ export async function getPendingAccessRequests(): Promise<AccessRequestItem[]> {
         e."EMP_EMAIL_ID"
       FROM "ACCESS_REQUESTS" r
       LEFT JOIN "EDN_PIS_EMPLOYEE_MASTER_VIEW" e ON LOWER(TRIM(e."EMP_ID")) = LOWER(TRIM(r."username"))
-      WHERE r."status" = 'PENDING'
-      ORDER BY r."requested_at" ASC
-    `)
+    `
+    const params: unknown[] = []
+
+    if (filterStatus && filterStatus !== "ALL") {
+      queryText += ` WHERE r."status" = $1`
+      params.push(filterStatus)
+    }
+
+    queryText += ` ORDER BY r."requested_at" DESC`
+
+    const res = await query(queryText, params)
 
     return res.rows.map((r) => {
       const nameParts = [r.EMP_FNAME, r.EMP_MNAME, r.EMP_LNAME].filter((p: string) => p && p.trim())
@@ -1185,6 +1224,7 @@ export async function getPendingAccessRequests(): Promise<AccessRequestItem[]> {
         requestedRole: r.requested_role,
         status: r.status,
         reason: r.reason,
+        reviewNotes: r.review_notes,
         requestedAt: r.requested_at,
         reviewedAt: r.reviewed_at,
         reviewedBy: r.reviewed_by,
@@ -1195,9 +1235,16 @@ export async function getPendingAccessRequests(): Promise<AccessRequestItem[]> {
       }
     })
   } catch (error) {
-    console.error("getPendingAccessRequests error:", error)
+    console.error("getAccessRequests error:", error)
     return []
   }
+}
+
+/**
+ * Retrieve pending role and access elevation requests (alias for backward compatibility)
+ */
+export async function getPendingAccessRequests(): Promise<AccessRequestItem[]> {
+  return getAccessRequests("PENDING")
 }
 
 /**

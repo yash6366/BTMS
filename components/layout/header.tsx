@@ -3,7 +3,8 @@
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ShieldCheck } from "lucide-react"
+import { useAuth } from "@/hooks/use-auth"
 
 interface HeaderProps {
   title: string
@@ -13,6 +14,8 @@ interface HeaderProps {
 }
 
 export function Header({ title, subtitle, showBackButton = false, backHref = "/" }: HeaderProps) {
+  const { isAdmin } = useAuth()
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="container mx-auto px-6 py-4">
@@ -34,14 +37,25 @@ export function Header({ title, subtitle, showBackButton = false, backHref = "/"
             </div>
           </div>
 
-          {showBackButton && (
-            <Button variant="ghost" asChild>
-              <Link href={backHref}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Home
-              </Link>
-            </Button>
-          )}
+          <div className="flex items-center space-x-3">
+            {isAdmin() && (
+              <Button asChild size="sm" className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold h-8">
+                <Link href="/admin">
+                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5 text-blue-400" />
+                  Admin Center
+                </Link>
+              </Button>
+            )}
+
+            {showBackButton && (
+              <Button variant="ghost" asChild>
+                <Link href={backHref}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to Home
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </header>

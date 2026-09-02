@@ -1,6 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { authenticateUser, authenticateTransportUser } from "@/lib/auth"
-import { createSecureToken, setSecureAuthCookies, checkRateLimit, clearRateLimit } from "@/lib/secure-auth"
+import { 
+  createSecureToken, 
+  setSecureAuthCookies, 
+  checkRateLimit, 
+  clearRateLimit,
+  resolveUserRole,
+  resolvePermissions
+} from "@/lib/secure-auth"
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -74,27 +81,28 @@ export async function POST(request: NextRequest) {
       }, { status: 403 })
     }
 
-    // Determine user role based on actual user type and permissions
-    let userRole = "employee"
-    if (actualUserType === 'transport') {
-      userRole = "transport"
-    } else {
-      const isManager = user.manage === "1" || 
-                       user.usergroup?.toLowerCase().includes("manager") ||
-                       user.usergroup?.toLowerCase().includes("admin")
-      userRole = isManager ? "manager" : "employee"
-    }
+    // Determine authoritative canonical user role and permissions
+    const userRole = resolveUserRole({
+      username: user.username,
+      usergroup: user.usergroup,
+      pageaccess: user.pageaccess,
+      manage: user.manage,
+      tools: user.tools,
+      usertype: actualUserType,
+    })
+    const userPermissions = resolvePermissions(user, userRole)
 
-    // Create secure JWT tokens
+    // Create secure JWT tokens with canonical claims
     const tokens = await createSecureToken({
       username: user.username,
-      usergroup: user.usergroup || (actualUserType === 'transport' ? 'transport' : 'employee'),
+      usergroup: user.usergroup || userRole,
       email: user.email,
       build: user.build,
       manage: user.manage,
       tools: user.tools,
       role: userRole,
       usertype: actualUserType,
+      pageaccess: user.pageaccess,
     })
 
     // Set secure HTTP-only cookies
@@ -108,11 +116,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         role: userRole,
         usertype: actualUserType,
-        permissions: {
-          build: user.build === "1",
-          manage: user.manage === "1",
-          tools: user.tools === "1",
-        },
+        permissions: userPermissions,
         pageaccess: user.pageaccess,
         reportingto: user.reportingto,
       },

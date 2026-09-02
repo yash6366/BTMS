@@ -1,3 +1,5 @@
+export type UserRole = "employee" | "manager" | "transport" | "admin"
+
 export type User = {
   username: string
   email?: string
@@ -9,7 +11,7 @@ export type User = {
   lastName?: string
   middleName?: string
   fullName?: string
-  role: "employee" | "manager" | "transport"
+  role: UserRole
   usertype?: "regular" | "transport"
   permissions?: {
     build: boolean

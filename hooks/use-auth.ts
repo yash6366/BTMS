@@ -125,12 +125,16 @@ export function useAuth() {
     return user?.permissions?.[permission] === true
   }
 
+  const isAdmin = () => {
+    return user?.role === "admin"
+  }
+
   const isManager = () => {
-    return user?.permissions?.manage === true || user?.role === "manager"
+    return user?.role === "manager" || (user?.role !== "admin" && user?.permissions?.manage === true)
   }
 
   const isEmployee = () => {
-    return !isManager() && !isTransport() && !!user
+    return user?.role === "employee"
   }
 
   const isTransport = () => {
@@ -144,6 +148,7 @@ export function useAuth() {
     logout,
     requireAuth,
     hasPermission,
+    isAdmin,
     isManager,
     isEmployee,
     isTransport,

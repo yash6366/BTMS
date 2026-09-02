@@ -1,6 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { authenticateUser, authenticateTransportUser } from "@/lib/auth"
-import { createSecureToken, setSecureAuthCookies, checkRateLimit, clearRateLimit } from "@/lib/secure-auth"
+import { 
+  createSecureToken, 
+  setSecureAuthCookies, 
+  checkRateLimit, 
+  clearRateLimit,
+  resolveUserRole,
+  resolvePermissions
+} from "@/lib/secure-auth"
 
 export const dynamic = "force-dynamic"
 
@@ -44,37 +51,37 @@ export async function POST(request: NextRequest) {
     // Clear rate limit on successful authentication
     clearRateLimit(clientIP)
 
-    // Determine user role based on user type and permissions
-    let userRole = "employee"
+    // Determine authoritative canonical user role and permissions
+    const userRole = resolveUserRole({
+      username: user.username,
+      usergroup: user.usergroup,
+      pageaccess: user.pageaccess,
+      manage: user.manage,
+      tools: user.tools,
+      usertype: userType,
+    })
+    const userPermissions = resolvePermissions(user, userRole)
+
     let redirectTo = "/dashboard"
-
-    const isAdmin =
-      user.usergroup?.toLowerCase().includes("admin") ||
-      user.pageaccess?.toLowerCase().includes("admin") ||
-      user.username?.toLowerCase() === "admin"
-
-    if (isAdmin) {
-      userRole = "admin"
+    if (userRole === "admin") {
       redirectTo = "/admin"
-    } else if (userType === 'transport' || user.tools === '1' || user.usergroup?.toLowerCase().includes("transport")) {
-      userRole = "transport"
+    } else if (userRole === "transport") {
       redirectTo = "/transport-dashboard"
-    } else {
-      const isManager = user.manage === "1" || user.usergroup?.toLowerCase().includes("manager")
-      userRole = isManager ? "manager" : "employee"
-      redirectTo = userRole === "manager" ? "/manager-dashboard" : "/dashboard"
+    } else if (userRole === "manager") {
+      redirectTo = "/dashboard"
     }
 
-    // Create secure JWT tokens
+    // Create secure JWT tokens with canonical claims
     const tokens = await createSecureToken({
       username: user.username,
-      usergroup: user.usergroup || "employee",
+      usergroup: user.usergroup || userRole,
       email: user.email,
       build: user.build,
       manage: user.manage,
       tools: user.tools,
       role: userRole,
       usertype: userType,
+      pageaccess: user.pageaccess,
     })
 
     // Set secure HTTP-only cookies
@@ -88,11 +95,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         role: userRole,
         usertype: userType,
-        permissions: {
-          build: user.build === "1",
-          manage: user.manage === "1",
-          tools: user.tools === "1",
-        },
+        permissions: userPermissions,
         pageaccess: user.pageaccess,
         reportingto: user.reportingto,
       },

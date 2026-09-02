@@ -1,9 +1,10 @@
 "use client"
 
 import Image from "next/image"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { LogOut } from "lucide-react"
+import { LogOut, ShieldCheck } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 interface MenuItem {
@@ -84,6 +85,24 @@ export function Sidebar({ title, subtitle, user, menuItems, activeMenu, onMenuCh
           })}
         </div>
       </nav>
+
+      {user.role === "admin" && (
+        <div className="p-3 mx-3 mb-2 rounded-lg bg-slate-900 border border-slate-800 text-white shadow-xs">
+          <div className="text-[10px] uppercase font-bold text-blue-400 tracking-wider mb-1.5 flex items-center">
+            <ShieldCheck className="h-3.5 w-3.5 mr-1" />
+            Privileged Access
+          </div>
+          <Button
+            asChild
+            size="sm"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold h-8"
+          >
+            <Link href="/admin">
+              Admin Control Center
+            </Link>
+          </Button>
+        </div>
+      )}
 
       <Separator />
 

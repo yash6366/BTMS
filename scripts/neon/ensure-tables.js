@@ -44,6 +44,29 @@ async function setupTables() {
     await client.query(`CREATE INDEX IF NOT EXISTS "idx_access_requests_username_status" ON "ACCESS_REQUESTS"("username", "status");`);
     await client.query(`CREATE INDEX IF NOT EXISTS "idx_admin_audit_created_at" ON "ADMIN_AUDIT_LOGS"("created_at" DESC);`);
 
+    // 3. User Table Security Columns (must_change_password)
+    await client.query(`ALTER TABLE "axusers" ADD COLUMN IF NOT EXISTS "must_change_password" BOOLEAN DEFAULT FALSE;`);
+
+    // 4. Expand legacy transport remarks column limits
+    await client.query(`ALTER TABLE "CABBOOKING_DETAILS" ALTER COLUMN "REMARKS_APVR" TYPE TEXT;`);
+    await client.query(`ALTER TABLE "CABBOOKING_DETAILS" ALTER COLUMN "REMARKS_USER" TYPE TEXT;`);
+
+    // 5. Database-Level Audit Log Immutability Trigger (Phase H)
+    await client.query(`
+      CREATE OR REPLACE FUNCTION enforce_audit_log_immutability()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        RAISE EXCEPTION 'ADMIN_AUDIT_LOGS is append-only. UPDATE and DELETE operations are forbidden.'
+          USING ERRCODE = '55000';
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_audit_log_immutability ON "ADMIN_AUDIT_LOGS";
+      CREATE TRIGGER trg_audit_log_immutability
+      BEFORE UPDATE OR DELETE ON "ADMIN_AUDIT_LOGS"
+      FOR EACH ROW EXECUTE FUNCTION enforce_audit_log_immutability();
+    `);
+
     const tables = await client.query(`
       SELECT table_name 
       FROM information_schema.tables 

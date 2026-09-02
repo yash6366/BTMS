@@ -39,8 +39,19 @@ import {
   ShieldAlert,
   Sliders,
   ChevronRight,
+  Car,
+  ChevronLeft,
+  ChevronRight as ChevronRightIcon,
+  FileText,
+  Activity,
 } from "lucide-react"
 import { AdminStats, AdminEmployeeItem, AccessRequestItem, DBUser } from "@/lib/auth"
+import { EditUserModal } from "@/components/admin/EditUserModal"
+import { RequisitionOverrideModal } from "@/components/admin/RequisitionOverrideModal"
+import { ProvisionUserModal } from "@/components/admin/ProvisionUserModal"
+import { SystemHealthCard } from "@/components/admin/SystemHealthCard"
+import type { AdminRequisitionItem, TransportKPIs } from "@/lib/admin-transport-service"
+import { useAuth } from "@/hooks/use-auth"
 
 interface AuditLogItem {
   id: number
@@ -54,6 +65,7 @@ interface AuditLogItem {
 
 export default function AdminDashboardPage() {
   const router = useRouter()
+  const { user: currentAuthUser } = useAuth()
   const [activeTab, setActiveTab] = useState("overview")
   const [isLoading, setIsLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
@@ -67,16 +79,38 @@ export default function AdminDashboardPage() {
   const [accessRequests, setAccessRequests] = useState<AccessRequestItem[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([])
 
-  // Search and Filter States
+  // Requisitions & Fleet States (Phase E)
+  const [requisitions, setRequisitions] = useState<AdminRequisitionItem[]>([])
+  const [reqKpis, setReqKpis] = useState<TransportKPIs | null>(null)
+  const [reqStatusFilter, setReqStatusFilter] = useState("ALL")
+  const [reqSearch, setReqSearch] = useState("")
+  const [reqDeptFilter, setReqDeptFilter] = useState("ALL")
+  const [reqPage, setReqPage] = useState(1)
+  const [reqPageSize, setReqPageSize] = useState(25)
+  const [reqPagination, setReqPagination] = useState({ page: 1, pageSize: 25, total: 0, totalPages: 1 })
+  const [showOverrideModal, setShowOverrideModal] = useState(false)
+  const [selectedRequisition, setSelectedRequisition] = useState<AdminRequisitionItem | null>(null)
+
+  // Search, Filter & Server-side Pagination States (Phase D)
   const [empSearch, setEmpSearch] = useState("")
   const [empDeptFilter, setEmpDeptFilter] = useState("ALL")
+  const [empPage, setEmpPage] = useState(1)
+  const [empPageSize, setEmpPageSize] = useState(25)
+  const [empPagination, setEmpPagination] = useState({ page: 1, pageSize: 25, total: 0, totalPages: 1 })
+  const [showProvisionModal, setShowProvisionModal] = useState(false)
+  const [selectedProvisionEmp, setSelectedProvisionEmp] = useState<AdminEmployeeItem | null>(null)
+
+  // User Accounts & Access Elevation Filtering (Phase B & C)
   const [userSearch, setUserSearch] = useState("")
   const [userRoleFilter, setUserRoleFilter] = useState("ALL")
+  const [requestStatusFilter, setRequestStatusFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL")
 
   // Modal Dialog States
   const [showAddEmpModal, setShowAddEmpModal] = useState(false)
   const [showEditEmpModal, setShowEditEmpModal] = useState(false)
   const [selectedEmp, setSelectedEmp] = useState<AdminEmployeeItem | null>(null)
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<DBUser | null>(null)
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [selectedRequest, setSelectedRequest] = useState<AccessRequestItem | null>(null)
   const [rejectReason, setRejectReason] = useState("")
@@ -110,36 +144,64 @@ export default function AdminDashboardPage() {
     }
   }, [successMessage])
 
+  // Centralized Authenticated Admin Fetcher
+  // 401 -> Session expired -> redirect to login
+  // 403 -> Forbidden -> unauthorized notice and redirect to dashboard
+  const adminFetch = useCallback(async (url: string, options?: RequestInit) => {
+    try {
+      const res = await fetch(url, options)
+      if (res.status === 401) {
+        router.push("/login?redirect=/admin")
+        throw new Error("SESSION_EXPIRED")
+      }
+      if (res.status === 403) {
+        setError("Access denied. Administrator privileges required.")
+        router.push("/dashboard")
+        throw new Error("FORBIDDEN")
+      }
+      return res
+    } catch (err) {
+      if (err instanceof Error && (err.message === "SESSION_EXPIRED" || err.message === "FORBIDDEN")) {
+        throw err
+      }
+      console.error(`adminFetch error on ${url}:`, err)
+      throw err
+    }
+  }, [router])
+
   // Fetch Dashboard Stats
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/stats")
+      const res = await adminFetch("/api/admin/stats")
       if (res.ok) {
         const data = await res.json()
         setStats(data.stats)
-      } else if (res.status === 403) {
-        router.push("/login")
       }
     } catch (err) {
       console.error("fetchStats error:", err)
     }
-  }, [router])
+  }, [adminFetch])
 
-  // Fetch Employees List
+  // Fetch Employees List with Server-Side Pagination
   const fetchEmployees = useCallback(async () => {
     try {
       const params = new URLSearchParams()
       if (empSearch) params.set("search", empSearch)
       if (empDeptFilter !== "ALL") params.set("department", empDeptFilter)
-      const res = await fetch(`/api/admin/employees?${params.toString()}`)
+      params.set("page", empPage.toString())
+      params.set("pageSize", empPageSize.toString())
+      const res = await adminFetch(`/api/admin/employees?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setEmployees(data.employees || [])
+        if (data.pagination) {
+          setEmpPagination(data.pagination)
+        }
       }
     } catch (err) {
       console.error("fetchEmployees error:", err)
     }
-  }, [empSearch, empDeptFilter])
+  }, [adminFetch, empSearch, empDeptFilter, empPage, empPageSize])
 
   // Fetch Users List
   const fetchUsers = useCallback(async () => {
@@ -147,7 +209,7 @@ export default function AdminDashboardPage() {
       const params = new URLSearchParams()
       if (userSearch) params.set("search", userSearch)
       if (userRoleFilter !== "ALL") params.set("role", userRoleFilter)
-      const res = await fetch(`/api/admin/users?${params.toString()}`)
+      const res = await adminFetch(`/api/admin/users?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setUsers(data.users || [])
@@ -155,12 +217,12 @@ export default function AdminDashboardPage() {
     } catch (err) {
       console.error("fetchUsers error:", err)
     }
-  }, [userSearch, userRoleFilter])
+  }, [adminFetch, userSearch, userRoleFilter])
 
-  // Fetch Access Requests
+  // Fetch Access Requests with status filter (Phase C)
   const fetchAccessRequests = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/access-requests")
+      const res = await adminFetch(`/api/admin/access-requests?status=${requestStatusFilter}`)
       if (res.ok) {
         const data = await res.json()
         setAccessRequests(data.requests || [])
@@ -168,12 +230,33 @@ export default function AdminDashboardPage() {
     } catch (err) {
       console.error("fetchAccessRequests error:", err)
     }
-  }, [])
+  }, [adminFetch, requestStatusFilter])
+
+  // Fetch Requisitions and Transport KPIs (Phase E)
+  const fetchRequisitions = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (reqStatusFilter !== "ALL") params.set("status", reqStatusFilter)
+      if (reqSearch) params.set("search", reqSearch)
+      if (reqDeptFilter !== "ALL") params.set("department", reqDeptFilter)
+      params.set("page", reqPage.toString())
+      params.set("pageSize", reqPageSize.toString())
+      const res = await adminFetch(`/api/admin/requisitions?${params.toString()}`)
+      if (res.ok) {
+        const data = await res.json()
+        setRequisitions(data.requisitions || [])
+        if (data.pagination) setReqPagination(data.pagination)
+        if (data.kpis) setReqKpis(data.kpis)
+      }
+    } catch (err) {
+      console.error("fetchRequisitions error:", err)
+    }
+  }, [adminFetch, reqStatusFilter, reqSearch, reqDeptFilter, reqPage, reqPageSize])
 
   // Fetch Audit Logs
   const fetchAuditLogs = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/audit?limit=100")
+      const res = await adminFetch("/api/admin/audit?limit=100")
       if (res.ok) {
         const data = await res.json()
         setAuditLogs(data.logs || [])
@@ -181,14 +264,21 @@ export default function AdminDashboardPage() {
     } catch (err) {
       console.error("fetchAuditLogs error:", err)
     }
-  }, [])
+  }, [adminFetch])
 
   // Refresh All Data
   const refreshAll = useCallback(async () => {
     setIsLoading(true)
-    await Promise.all([fetchStats(), fetchEmployees(), fetchUsers(), fetchAccessRequests(), fetchAuditLogs()])
+    await Promise.all([
+      fetchStats(),
+      fetchEmployees(),
+      fetchUsers(),
+      fetchAccessRequests(),
+      fetchAuditLogs(),
+      fetchRequisitions(),
+    ])
     setIsLoading(false)
-  }, [fetchStats, fetchEmployees, fetchUsers, fetchAccessRequests, fetchAuditLogs])
+  }, [fetchStats, fetchEmployees, fetchUsers, fetchAccessRequests, fetchAuditLogs, fetchRequisitions])
 
   useEffect(() => {
     refreshAll()
@@ -385,6 +475,27 @@ export default function AdminDashboardPage() {
               <Sliders className="h-4 w-4" />
               <span>Overview</span>
             </div>
+          </button>
+
+          <div className="pt-3 pb-1 px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            Operations & Fleet
+          </div>
+
+          <button
+            onClick={() => setActiveTab("requisitions")}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-xs font-semibold transition-all ${
+              activeTab === "requisitions" ? "bg-blue-600 text-white shadow-sm" : "text-slate-300 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <div className="flex items-center space-x-2.5">
+              <Car className="h-4 w-4" />
+              <span>Requisitions & Fleet</span>
+            </div>
+            {reqKpis && reqKpis.pendingApprovals > 0 ? (
+              <span className="text-[10px] bg-amber-500 text-slate-950 font-bold px-2 py-0.5 rounded-full">
+                {reqKpis.pendingApprovals}
+              </span>
+            ) : null}
           </button>
 
           <div className="pt-3 pb-1 px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -632,6 +743,47 @@ export default function AdminDashboardPage() {
                 </Card>
               </div>
 
+              {/* Transport & Requisition Operational Pulse (Phase E) */}
+              <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-xl p-4 shadow-sm border border-slate-700">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-700/60">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-blue-600/30 border border-blue-400/40 flex items-center justify-center">
+                      <Car className="h-4 w-4 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-wide">Fleet & Ride Requisition Pulse</h3>
+                      <p className="text-[11px] text-slate-300">Live system-wide movement across indenting, authorization, and dispatch</p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setActiveTab("requisitions")}
+                    className="h-7 px-2.5 text-xs bg-blue-600 hover:bg-blue-500 text-white font-semibold self-start sm:self-auto"
+                  >
+                    Open Fleet Control <ChevronRightIcon className="h-3 w-3 ml-1" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700">
+                    <span className="text-[11px] text-slate-400 block font-medium">Pending Manager Approvals</span>
+                    <span className="text-xl font-bold text-amber-400 block mt-1">{reqKpis?.pendingApprovals ?? "..."}</span>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700">
+                    <span className="text-[11px] text-slate-400 block font-medium">Approved - Pending Fleet</span>
+                    <span className="text-xl font-bold text-blue-400 block mt-1">{reqKpis?.pendingAllotment ?? "..."}</span>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700">
+                    <span className="text-[11px] text-slate-400 block font-medium">Allotted & Dispatched</span>
+                    <span className="text-xl font-bold text-emerald-400 block mt-1">{reqKpis?.allottedTrips ?? "..."}</span>
+                  </div>
+                  <div className="bg-slate-800/80 rounded-lg p-2.5 border border-slate-700">
+                    <span className="text-[11px] text-slate-400 block font-medium">Today's Scheduled Trips</span>
+                    <span className="text-xl font-bold text-white block mt-1">{reqKpis?.todayTrips ?? "..."}</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Action Cards & Role Request Spotlight */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Pending Role Approvals Spotlight */}
@@ -741,7 +893,247 @@ export default function AdminDashboardPage() {
           )}
 
           {/* ======================================================== */}
-          {/* TAB 2: EMPLOYEE MASTER DIRECTORY                         */}
+          {/* TAB 2: TRANSPORT REQUISITIONS & FLEET OVERSIGHT (PHASE E) */}
+          {/* ======================================================== */}
+          {activeTab === "requisitions" && (
+            <div className="space-y-4 max-w-7xl mx-auto">
+              {/* Filter Controls & Status Pills */}
+              <div className="bg-white p-3.5 rounded-lg border border-gray-200 space-y-3 shadow-xs">
+                <div className="flex flex-wrap items-center gap-2 pb-1 border-b border-gray-100">
+                  <Button
+                    variant={reqStatusFilter === "ALL" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setReqStatusFilter("ALL"); setReqPage(1); }}
+                    className="text-xs h-8"
+                  >
+                    All Requisitions ({reqPagination.total})
+                  </Button>
+                  <Button
+                    variant={reqStatusFilter === "PENDING_APPROVAL" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setReqStatusFilter("PENDING_APPROVAL"); setReqPage(1); }}
+                    className={`text-xs h-8 ${reqStatusFilter === "PENDING_APPROVAL" ? "bg-amber-600 hover:bg-amber-700" : "text-amber-800 border-amber-300 hover:bg-amber-50"}`}
+                  >
+                    Pending Approval ({reqKpis?.pendingApprovals ?? 0})
+                  </Button>
+                  <Button
+                    variant={reqStatusFilter === "PENDING_ALLOTMENT" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setReqStatusFilter("PENDING_ALLOTMENT"); setReqPage(1); }}
+                    className={`text-xs h-8 ${reqStatusFilter === "PENDING_ALLOTMENT" ? "bg-blue-600 hover:bg-blue-700" : "text-blue-800 border-blue-300 hover:bg-blue-50"}`}
+                  >
+                    Pending Allotment ({reqKpis?.pendingAllotment ?? 0})
+                  </Button>
+                  <Button
+                    variant={reqStatusFilter === "ALLOTTED" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setReqStatusFilter("ALLOTTED"); setReqPage(1); }}
+                    className={`text-xs h-8 ${reqStatusFilter === "ALLOTTED" ? "bg-emerald-600 hover:bg-emerald-700" : "text-emerald-800 border-emerald-300 hover:bg-emerald-50"}`}
+                  >
+                    Fleet Allotted ({reqKpis?.allottedTrips ?? 0})
+                  </Button>
+                  <Button
+                    variant={reqStatusFilter === "REJECTED" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setReqStatusFilter("REJECTED"); setReqPage(1); }}
+                    className="text-xs h-8 text-red-700 border-red-200 hover:bg-red-50"
+                  >
+                    Rejected / Denied
+                  </Button>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+                  <div className="flex flex-1 items-center space-x-2 w-full sm:w-auto">
+                    <div className="relative w-full sm:w-72">
+                      <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+                      <Input
+                        placeholder="Search Serial, Passenger, Staff No..."
+                        value={reqSearch}
+                        onChange={(e) => { setReqSearch(e.target.value); setReqPage(1); }}
+                        className="pl-9 text-xs h-9"
+                      />
+                    </div>
+
+                    <Select value={reqDeptFilter} onValueChange={(val) => { setReqDeptFilter(val); setReqPage(1); }}>
+                      <SelectTrigger className="w-48 text-xs h-9">
+                        <SelectValue placeholder="All Departments" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All Departments</SelectItem>
+                        <SelectItem value="Information Technology">Information Technology</SelectItem>
+                        <SelectItem value="Transport & Logistics">Transport & Logistics</SelectItem>
+                        <SelectItem value="Manufacturing">Manufacturing</SelectItem>
+                        <SelectItem value="Finance">Finance</SelectItem>
+                        <SelectItem value="Human Resources">Human Resources</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="text-xs text-gray-500 font-medium">
+                    Showing page {reqPage} of {reqPagination.totalPages || 1} ({reqPagination.total} total)
+                  </div>
+                </div>
+              </div>
+
+              {/* Requisitions Table */}
+              <Card className="border-gray-200 shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-bold uppercase tracking-wider">
+                      <tr>
+                        <th className="py-3 px-4">Serial / ID</th>
+                        <th className="py-3 px-4">Passenger</th>
+                        <th className="py-3 px-4">Route</th>
+                        <th className="py-3 px-4">Schedule</th>
+                        <th className="py-3 px-4">Vehicle / Purpose</th>
+                        <th className="py-3 px-4">Approval State</th>
+                        <th className="py-3 px-4">Fleet Assignment</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-gray-800">
+                      {requisitions.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-10 text-center text-gray-500">
+                            No ride requisitions match the selected status or filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        requisitions.map((req) => (
+                          <tr key={req.serialNo} className="hover:bg-gray-50/70 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-gray-900">{req.serialNo}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-semibold text-gray-900 block">{req.passengerName}</span>
+                              <span className="font-mono text-[11px] text-gray-500 block">
+                                ID: {req.staffNo} | {req.department}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="text-gray-900 font-medium block">{req.startingPlace}</span>
+                              <span className="text-[11px] text-gray-500 block">&rarr; {req.destination}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-medium text-gray-800 block">
+                                {req.tripDate ? new Date(req.tripDate).toLocaleDateString() : "—"}
+                              </span>
+                              <span className="text-[11px] text-gray-500 font-mono block">{req.tripTime}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-medium text-gray-800 block">{req.vehicleRequested}</span>
+                              <span className="text-[11px] text-gray-500 block truncate max-w-[140px]">{req.purpose}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {req.statusApprover === "APVD" ? (
+                                <Badge className="bg-green-50 text-green-800 border-green-200 text-[10px] font-bold">
+                                  ✓ Approved
+                                </Badge>
+                              ) : req.statusApprover === "REJ" ? (
+                                <Badge className="bg-red-50 text-red-800 border-red-200 text-[10px] font-bold">
+                                  ✕ Rejected
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-50 text-amber-900 border-amber-300 text-[10px] font-bold">
+                                  ⏳ Pending Approver
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              {req.statusTransport === "PASS" ? (
+                                <div>
+                                  <Badge className="bg-emerald-100 text-emerald-900 border-emerald-200 text-[10px] font-bold">
+                                    Allotted: {req.vehicleNo || req.vehicleAllotted || "Vehicle"}
+                                  </Badge>
+                                  {req.driverName && (
+                                    <span className="text-[10px] text-gray-500 block mt-0.5 font-sans">
+                                      Driver: {req.driverName} {req.driverMobile ? `(${req.driverMobile})` : ""}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : req.statusApprover === "APVD" ? (
+                                <Badge variant="outline" className="text-[10px] text-blue-700 border-blue-200 bg-blue-50">
+                                  Awaiting Dispatch
+                                </Badge>
+                              ) : (
+                                <span className="text-gray-400 text-[11px]">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {req.statusApprover === "OPEN" ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedRequisition(req)
+                                    setShowOverrideModal(true)
+                                  }}
+                                  className="h-7 px-2 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                                >
+                                  <ShieldAlert className="h-3.5 w-3.5 mr-1" />
+                                  Override
+                                </Button>
+                              ) : (
+                                <span className="text-[11px] text-gray-400">Processed</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination Controls */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50/50">
+                  <div className="text-xs text-gray-500">
+                    Showing {Math.min((reqPage - 1) * reqPageSize + 1, reqPagination.total)} to{" "}
+                    {Math.min(reqPage * reqPageSize, reqPagination.total)} of {reqPagination.total} requisitions
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Select
+                      value={reqPageSize.toString()}
+                      onValueChange={(val) => {
+                        setReqPageSize(parseInt(val, 10))
+                        setReqPage(1)
+                      }}
+                    >
+                      <SelectTrigger className="w-20 text-xs h-8">
+                        <SelectValue placeholder="25" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 / page</SelectItem>
+                        <SelectItem value="25">25 / page</SelectItem>
+                        <SelectItem value="50">50 / page</SelectItem>
+                        <SelectItem value="100">100 / page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={reqPage <= 1}
+                      onClick={() => setReqPage((p) => Math.max(1, p - 1))}
+                      className="h-8 px-2 text-xs"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Prev
+                    </Button>
+                    <span className="text-xs font-semibold px-1 text-gray-700">
+                      Page {reqPage} of {reqPagination.totalPages || 1}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={reqPage >= (reqPagination.totalPages || 1)}
+                      onClick={() => setReqPage((p) => p + 1)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      Next <ChevronRightIcon className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 3: EMPLOYEE MASTER DIRECTORY                         */}
           {/* ======================================================== */}
           {activeTab === "employees" && (
             <div className="space-y-4 max-w-7xl mx-auto">
@@ -831,6 +1223,18 @@ export default function AdminDashboardPage() {
                               )}
                             </td>
                             <td className="py-3 px-4 text-right space-x-2">
+                              {!emp.hasAccount && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedProvisionEmp(emp)
+                                    setShowProvisionModal(true)
+                                  }}
+                                  className="h-7 px-2 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                                >
+                                  <UserPlus className="h-3 w-3 mr-1" /> Provision
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -869,6 +1273,54 @@ export default function AdminDashboardPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Server-Side Pagination Footer */}
+                <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50/50">
+                  <div className="text-xs text-gray-500">
+                    Showing {Math.min((empPage - 1) * empPageSize + 1, empPagination.total)} to{" "}
+                    {Math.min(empPage * empPageSize, empPagination.total)} of {empPagination.total} master records
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Select
+                      value={empPageSize.toString()}
+                      onValueChange={(val) => {
+                        setEmpPageSize(parseInt(val, 10))
+                        setEmpPage(1)
+                      }}
+                    >
+                      <SelectTrigger className="w-20 text-xs h-8">
+                        <SelectValue placeholder="25" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 / page</SelectItem>
+                        <SelectItem value="25">25 / page</SelectItem>
+                        <SelectItem value="50">50 / page</SelectItem>
+                        <SelectItem value="100">100 / page</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={empPage <= 1}
+                      onClick={() => setEmpPage((p) => Math.max(1, p - 1))}
+                      className="h-8 px-2 text-xs"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Prev
+                    </Button>
+                    <span className="text-xs font-semibold px-1 text-gray-700">
+                      Page {empPage} of {empPagination.totalPages || 1}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={empPage >= (empPagination.totalPages || 1)}
+                      onClick={() => setEmpPage((p) => p + 1)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      Next <ChevronRightIcon className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
               </Card>
             </div>
           )}
@@ -888,17 +1340,53 @@ export default function AdminDashboardPage() {
                       </CardDescription>
                     </div>
                     <Badge variant="outline" className="text-xs bg-amber-50 text-amber-900 border-amber-300">
-                      {accessRequests.length} Pending
+                      {accessRequests.length} Showing ({requestStatusFilter})
                     </Badge>
                   </div>
                 </CardHeader>
+
+                {/* Status Filter Tabs (Phase C) */}
+                <div className="flex items-center space-x-2 px-4 py-2.5 bg-gray-50/50 border-b border-gray-100">
+                  <Button
+                    variant={requestStatusFilter === "ALL" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRequestStatusFilter("ALL")}
+                    className="text-xs h-7 px-2.5"
+                  >
+                    All Requests
+                  </Button>
+                  <Button
+                    variant={requestStatusFilter === "PENDING" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRequestStatusFilter("PENDING")}
+                    className={`text-xs h-7 px-2.5 ${requestStatusFilter === "PENDING" ? "bg-amber-600 hover:bg-amber-700" : "text-amber-800 border-amber-300"}`}
+                  >
+                    Pending
+                  </Button>
+                  <Button
+                    variant={requestStatusFilter === "APPROVED" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRequestStatusFilter("APPROVED")}
+                    className={`text-xs h-7 px-2.5 ${requestStatusFilter === "APPROVED" ? "bg-emerald-600 hover:bg-emerald-700" : "text-emerald-800 border-emerald-300"}`}
+                  >
+                    Approved
+                  </Button>
+                  <Button
+                    variant={requestStatusFilter === "REJECTED" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setRequestStatusFilter("REJECTED")}
+                    className="text-xs h-7 px-2.5 text-red-700 border-red-200"
+                  >
+                    Rejected
+                  </Button>
+                </div>
 
                 <CardContent className="p-0">
                   {accessRequests.length === 0 ? (
                     <div className="p-12 text-center text-xs text-gray-500">
                       <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-3 opacity-90" />
                       <p className="font-semibold text-gray-700 text-sm">Review Queue Empty</p>
-                      <p className="mt-1">All employee signup requests have been reviewed and authorized.</p>
+                      <p className="mt-1">No requests currently match the selected status filter.</p>
                     </div>
                   ) : (
                     <div className="divide-y divide-gray-100">
@@ -923,16 +1411,40 @@ export default function AdminDashboardPage() {
                           </div>
 
                           <div className="flex items-center space-x-2 shrink-0">
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setSelectedRequest(req)
-                                setShowReviewModal(true)
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 px-3 font-semibold"
-                            >
-                              Review & Decision
-                            </Button>
+                            {req.status === "PENDING" ? (
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedRequest(req)
+                                  setShowReviewModal(true)
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 px-3 font-semibold"
+                              >
+                                Review & Decision
+                              </Button>
+                            ) : req.status === "APPROVED" ? (
+                              <div className="text-right">
+                                <Badge className="bg-green-100 text-green-900 border-green-200 text-xs font-bold">
+                                  ✓ Approved
+                                </Badge>
+                                {req.reviewedBy && (
+                                  <span className="text-[10px] text-gray-500 block mt-0.5 font-sans">
+                                    By {req.reviewedBy} {req.reviewedAt ? `on ${new Date(req.reviewedAt).toLocaleDateString()}` : ""}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-right">
+                                <Badge className="bg-red-100 text-red-900 border-red-200 text-xs font-bold">
+                                  ✕ Rejected
+                                </Badge>
+                                {req.reviewNotes && (
+                                  <span className="text-[10px] text-gray-500 block mt-0.5 max-w-[180px] truncate">
+                                    {req.reviewNotes}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1037,7 +1549,19 @@ export default function AdminDashboardPage() {
                                 </Badge>
                               )}
                             </td>
-                            <td className="py-3 px-4 text-right">
+                            <td className="py-3 px-4 text-right space-x-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedUser(u)
+                                  setShowEditUserModal(true)
+                                }}
+                                className="h-7 px-2.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 font-semibold"
+                              >
+                                <Edit className="h-3.5 w-3.5 mr-1" />
+                                Manage
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -1124,6 +1648,9 @@ export default function AdminDashboardPage() {
           {/* ======================================================== */}
           {activeTab === "settings" && (
             <div className="space-y-6 max-w-5xl mx-auto">
+              {/* System Diagnostics Probe (Phase F) */}
+              <SystemHealthCard />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card className="border-gray-200 shadow-xs">
                   <CardHeader className="py-3.5 px-4 border-b border-gray-100">
@@ -1439,6 +1966,50 @@ export default function AdminDashboardPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ======================================================== */}
+      {/* MODAL: EDIT USER PRIVILEGES, ROLES & CREDENTIALS         */}
+      {/* ======================================================== */}
+      <EditUserModal
+        open={showEditUserModal}
+        onOpenChange={setShowEditUserModal}
+        user={selectedUser}
+        currentAdminUsername={currentAuthUser?.username || "admin"}
+        onUserUpdated={() => {
+          fetchUsers()
+          fetchStats()
+          fetchAuditLogs()
+        }}
+      />
+
+      {/* ======================================================== */}
+      {/* MODAL: PROVISION NEW USER ACCOUNT (PHASE D)               */}
+      {/* ======================================================== */}
+      <ProvisionUserModal
+        open={showProvisionModal}
+        onOpenChange={setShowProvisionModal}
+        employee={selectedProvisionEmp}
+        onProvisionSuccess={() => {
+          fetchEmployees()
+          fetchUsers()
+          fetchStats()
+          fetchAuditLogs()
+        }}
+      />
+
+      {/* ======================================================== */}
+      {/* MODAL: REQUISITION OVERRIDE / FORCE-APPROVAL (PHASE E)   */}
+      {/* ======================================================== */}
+      <RequisitionOverrideModal
+        open={showOverrideModal}
+        onOpenChange={setShowOverrideModal}
+        requisition={selectedRequisition}
+        onOverrideSuccess={() => {
+          fetchRequisitions()
+          fetchStats()
+          fetchAuditLogs()
+        }}
+      />
     </div>
   )
 }
