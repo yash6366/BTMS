@@ -232,7 +232,7 @@ async function runDatabaseConstraintsTests() {
     assertTruthy(pks.some(p => p.includes('CABBOOKING_DETAILS')), 'CABBOOKING_DETAILS Primary Key confirmed in catalog');
     assertTruthy(pks.some(p => p.includes('APPROVAL_NOTIFICATIONS')), 'APPROVAL_NOTIFICATIONS Primary Key confirmed in catalog');
 
-    // Trigger check
+    // Trigger check (only certified audit log immutability trigger should exist)
     const triggerRes = await pool.query(`
       SELECT tgname 
       FROM pg_trigger t
@@ -240,7 +240,8 @@ async function runDatabaseConstraintsTests() {
       JOIN pg_namespace n ON c.relnamespace = n.oid
       WHERE n.nspname = 'public' AND NOT t.tgisinternal
     `);
-    assertEquals(triggerRes.rows.length, 0, 'Zero unmanaged triggers in public schema');
+    const unmanagedTriggers = triggerRes.rows.filter(r => r.tgname !== 'trg_audit_log_immutability');
+    assertEquals(unmanagedTriggers.length, 0, 'Zero unmanaged triggers in public schema');
   });
 
   const success = suite.summary();

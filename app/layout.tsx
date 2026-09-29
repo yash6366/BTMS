@@ -2,7 +2,6 @@ import type React from "react"
 import type { Metadata, Viewport } from "next"
 import { Suspense } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
-// import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration"
 import ResourcePrefetch from "@/components/ResourcePrefetch"
 import "./globals.css"
 
@@ -51,7 +50,6 @@ export default function RootLayout({
 
       </head>
       <body className="font-sans">
-        {/* <ServiceWorkerRegistration /> */}
         <ResourcePrefetch />
         <ErrorBoundary>
           <Suspense fallback={<LoadingSpinner />}>

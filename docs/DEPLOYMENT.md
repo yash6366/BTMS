@@ -79,6 +79,6 @@ npm run deploy:verify
 ---
 
 ## 6. Health Check Endpoints & Monitoring
-- **UI Connectivity Check**: `/db-test`
+- **Admin System Health & Telemetry**: `GET /api/admin/health` (Requires Administrator session)
 - **Authentication Route Check**: `GET /login`
 - **Protected API Probe**: `GET /api/manager/notifications` (Returns `401 Unauthorized` without credentials)

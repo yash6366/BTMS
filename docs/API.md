@@ -47,7 +47,7 @@ Cookie: auth-token=<jwt-token>
 | Approvals | `/api/approvals/check` | GET | Yes | Check approver status |
 | Approvals | `/api/approvals/pending` | GET | Manager | Get pending approvals |
 | Approvals | `/api/approvals/approve` | POST | Manager | Approve/reject booking |
-| Utils | `/api/db/test-connection` | GET | No | Database health check |
+| Admin | `/api/admin/health` | GET | Admin | Database & System Health Diagnostics |
 
 ## 🔓 Authentication Endpoints
 
@@ -587,49 +587,43 @@ Cookie: auth-token=<jwt-token>
 }
 ```
 
-## 🔧 Utilities
+## 🔧 Administration & Health Diagnostics
 
-### Database Health Check
+### Database & System Health Check
 
-**GET** `/api/db/test-connection`
+**GET** `/api/admin/health`
 
-Test database connectivity and system health.
+Test database connectivity, connection pooling, and table volume telemetry. Requires Administrator session.
 
 #### Request
 
 ```http
-GET /api/db/test-connection
+GET /api/admin/health
+Cookie: auth-token=<ADMIN_JWT>
 ```
 
 #### Response
 
 ```json
 {
-  "connectionTest": "SUCCESS",
-  "server": "10.2.13.102",
-  "database": "digiseva",
-  "axusersTable": {
-    "exists": true,
-    "totalUsers": 1250,
-    "activeUsers": 1180,
-    "structure": [
-      {
-        "COLUMN_NAME": "username",
-        "DATA_TYPE": "varchar",
-        "IS_NULLABLE": "NO",
-        "CHARACTER_MAXIMUM_LENGTH": 50
-      }
-    ]
+  "success": true,
+  "healthy": true,
+  "database": {
+    "connected": true,
+    "version": "PostgreSQL 16.x on x86_64-pc-linux-gnu",
+    "tableCount": 6,
+    "userCount": 4
   },
-  "performance": {
-    "queryTime": "12ms",
-    "connectionPool": {
-      "total": 10,
-      "active": 3,
-      "idle": 7
-    }
+  "inventory": {
+    "registeredUsers": 4,
+    "masterEmployees": 5,
+    "totalRequisitions": 24,
+    "activeTransportBookings": 12,
+    "accessRequests": 3,
+    "auditRecords": 18
   },
-  "timestamp": "2025-01-11T10:45:00.000Z"
+  "timestamp": "2026-09-29T20:00:00.000Z",
+  "correlationId": "corr-uuid-12345"
 }
 ```
 

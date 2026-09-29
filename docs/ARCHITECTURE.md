@@ -45,22 +45,19 @@ bhel/
 │   ├── manager-dashboard/             # Manager Portal Page & Approval Dashboard
 │   ├── transport-dashboard/           # Transport Desk Operations Portal
 │   ├── login/                         # Unified & Role-specific Login Routes
-│   ├── db-test/                       # Real-time database connectivity check page
 │   ├── layout.tsx                     # App layout (Providers, Toaster, Navigation)
 │   ├── page.tsx                       # Root landing & booking request portal
 │   └── globals.css                    # Tailwind design system CSS variables
 │
 ├── components/                        # Shared & Domain-specific UI Components
+│   ├── admin/                         # Admin portal components & health cards
 │   ├── auth/                          # Authentication forms & login widgets
 │   ├── layout/                        # Global header, sidebar, navigation
 │   ├── loading/                       # Skeleton placeholders for data tables/cards
-│   ├── ui/                            # 48 Reusable Shadcn UI primitives
-│   ├── ApprovalList.tsx               # Manager approval list component
+│   ├── ui/                            # Tailored Shadcn UI primitives
 │   ├── ApprovalTable.tsx              # Interactive approval data table
 │   ├── BookingDetailsModal.tsx        # Deep booking inspect modal
-│   ├── DatabaseStatus.tsx             # Live Neon DB connection indicator widget
-│   ├── ErrorBoundary.tsx              # React component error boundary
-│   └── RoleBasedAccess.tsx            # Client-side RBAC component guard
+│   └── ErrorBoundary.tsx              # React component error boundary
 │
 ├── lib/                               # Core Business Logic & Infrastructure
 │   ├── database.ts                    # PostgreSQL connection pooling, retry, transactions
@@ -68,8 +65,8 @@ bhel/
 │   ├── auth.ts                        # Unified database/auth facade
 │   ├── form-validation.ts             # Zod and custom form validation schemas
 │   ├── utils.ts                       # ClassName merging and styling helpers
-│   ├── server/                        # Server-only data access utilities
-│   └── data/                          # Mock fallback data for isolated testing
+│   ├── logger.ts                      # Secure logger and correlation IDs
+│   └── server/                        # Server-only data access utilities
 │
 ├── hooks/                             # Custom React Hooks
 │   ├── use-auth.ts                    # Client-side auth state hook
@@ -114,7 +111,7 @@ bhel/
 ├── .env.example                       # Documented environment variable template
 ├── .gitignore                         # Git exclusion rules
 ├── eslint.config.js                   # Consolidated flat ESLint configuration
-├── middleware.ts                      # Next.js authentication & route protection proxy
+├── proxy.ts                           # Next.js 16 authentication & route protection proxy
 ├── next.config.js                     # Next.js server configuration
 ├── package.json                       # NPM package manifest with operational scripts
 ├── tailwind.config.ts                 # Tailwind design tokens and themes

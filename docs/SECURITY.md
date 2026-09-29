@@ -47,7 +47,7 @@ The access boundary is enforced at both Next.js edge middleware and server route
 | **Manager** | View subordinate requests, approve/reject trips, receive alerts | `/manager-dashboard`, `/api/approvals/*`, `/api/manager/*` |
 | **Transport Desk** | View approved pool, allot vehicles/drivers, issue passes | `/transport-dashboard`, `/api/transport/*` |
 
-### Middleware Enforcement (`middleware.ts`)
+### Edge Proxy / Middleware Enforcement (`proxy.ts`)
 Unauthorized requests to protected routes (`/dashboard`, `/manager-dashboard`, `/transport-dashboard`) are intercepted at the edge and redirected to `/login` with clean role contextualization.
 
 ---
